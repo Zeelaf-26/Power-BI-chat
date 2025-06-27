@@ -1,35 +1,22 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Power BI Chat</title>
-<style>
-    body { font-family: 'Segoe UI', sans-serif; margin: 10px; background-color: #f3f2f1; }
-    #chat-container { display: flex; flex-direction: column; height: 95vh; border: 1px solid #ccc; border-radius: 5px; background-color: white; }
-    #chat-log { flex-grow: 1; padding: 10px; overflow-y: auto; border-bottom: 1px solid #ccc; }
-    #input-container { display: flex; padding: 10px; }
-    input { flex-grow: 1; border: 1px solid #ccc; border-radius: 3px; padding: 8px; }
-    button { padding: 8px 12px; margin-left: 10px; border: none; background-color: #0078d4; color: white; border-radius: 3px; cursor: pointer; }
-    button:hover { background-color: #005a9e; }
-    .user-message, .bot-message { margin-bottom: 10px; padding: 8px; border-radius: 5px; max-width: 80%; word-wrap: break-word; }
-    .user-message { background-color: #e1f0ff; align-self: flex-end; margin-left: auto; }
-    .bot-message { background-color: #f3f2f1; align-self: flex-start; }
-</style>
+    <title>Power BI Chat</title>
+    <style>
+        body { font-family: sans-serif; padding: 1em; }
+        #log { height: 300px; border: 1px solid #ccc; padding: 1em; overflow-y: scroll; margin-bottom: 1em; }
+        #prompt { width: 80%; }
+    </style>
 </head>
 <body>
+    <h1>Power BI Data Chat</h1>
+    <div id="log"></div>
+    <input id="prompt" type="text" placeholder="Ask a question...">
+    <button id="send">Send</button>
 
-<div id="chat-container">
-    <div id="chat-log">
-        <div class="bot-message">Hello! Ask me a question about the data.</div>
-    </div>
-    <div id="input-container">
-        <input type="text" id="user-input" placeholder="Type your question here...">
-        <button id="send-button">Send</button>
-    </div>
-</div>
-
-<script>
-    // --- IMPORTANT: PASTE YOUR GOOGLE GEMINI API KEY HERE ---
-    const API_KEY = 'curl "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=GEMINI_API_KEY" \
+    <script>
+        // --- IMPORTANT: PASTE YOUR GOOGLE GEMINI API KEY HERE ---
+        const API_KEY = 'curl "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=GEMINI_API_KEY" \
   -H 'Content-Type: application/json' \
   -X POST \
   -d '{
@@ -43,75 +30,54 @@
       }
     ]
   }'';
-    // ---------------------------------------------------------
+        // ---------------------------------------------------------
 
-    const chatLog = document.getElementById('chat-log');
-    const userInput = document.getElementById('user-input');
-    const sendButton = document.getElementById('send-button');
+        const log = document.getElementById('log');
+        const promptInput = document.getElementById('prompt');
+        const sendButton = document.getElementById('send');
 
-    const dataContext = `--- Power BI Data Summary ---
-Total Complaints: 295
-Total Devices with Complaints: 192
-Repeated Complaints: 234
-Not Repeated Complaints: 61
-Complaints by City: Karachi (197), Lahore (78), Other (20)
-Top Complaint Types: Leakage from Unit, No Water Dispensing, No Cooling
-Top Resolutions: Unit Flushed (60), No issue Found (31), Pending on Inventory (26)
-Parts Replaced: 150 (51%)
-Parts Not Replaced: 145 (49%)`;
+        const dataContext = `--- Power BI Data Summary ---
+        Total Complaints: 295. Total Devices: 192. Repeated Complaints: 234. Not Repeated: 61.
+        Cities: Karachi (197), Lahore (78), Other (20).
+        Top Complaints: Leakage from Unit, No Water Dispensing, No Cooling.
+        Top Resolutions: Unit Flushed (60), No issue Found (31), Pending on Inventory (26).`;
 
-    async function sendMessage() {
-        const userMessage = userInput.value.trim();
-        if (!userMessage) return;
+        async function askAI() {
+            const userQuestion = promptInput.value;
+            log.innerHTML += `<div><b>You:</b> ${userQuestion}</div>`;
+            promptInput.value = '';
 
-        addMessage(userMessage, 'user-message');
-        userInput.value = '';
-        
-        const thinkingDiv = addMessage('Thinking...', 'bot-message');
+            const fullPrompt = `Based on this data: "${dataContext}", answer the following question: "${userQuestion}"`;
 
-        const prompt = `Context: You are a Power BI data analyst. Answer the user's question based ONLY on the following data summary. Be brief and to the point. Data Summary: ${dataContext}. Question: ${userMessage}. Answer:`;
+            try {
+                const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=' + API_KEY, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: fullPrompt }] }] })
+                });
 
-        try {
-            const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=' + API_KEY, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-            });
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error.message);
+                }
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error.message);
+                const data = await response.json();
+                const answer = data.candidates[0].content.parts[0].text;
+                log.innerHTML += `<div><b>AI:</b> ${answer}</div>`;
+
+            } catch (error) {
+                log.innerHTML += `<div><b>Error:</b> ${error.message}</div>`;
+                console.error(error);
             }
-
-            const data = await response.json();
-            const botResponse = data.candidates[0].content.parts[0].text;
-
-            chatLog.removeChild(thinkingDiv);
-            addMessage(botResponse, 'bot-message');
-
-        } catch (error) {
-            chatLog.removeChild(thinkingDiv);
-            addMessage('Sorry, an error occurred: ' + error.message, 'bot-message');
-            console.error('Error:', error);
+            log.scrollTop = log.scrollHeight;
         }
-    }
 
-    function addMessage(text, className) {
-        const div = document.createElement('div');
-        div.className = className;
-        div.textContent = text;
-        chatLog.appendChild(div);
-        chatLog.scrollTop = chatLog.scrollHeight;
-        return div;
-    }
-
-    sendButton.addEventListener('click', sendMessage);
-    userInput.addEventListener('keyup', function(event) {
-        if (event.key === 'Enter') {
-            sendMessage();
-        }
-    });
-</script>
-
+        sendButton.addEventListener('click', askAI);
+        promptInput.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') {
+                askAI();
+            }
+        });
+    </script>
 </body>
 </html>
